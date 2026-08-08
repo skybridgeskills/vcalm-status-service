@@ -1,0 +1,41 @@
+{
+  "name": "@skybridgeskills/vc-signer",
+  "version": "0.1.0",
+  "description": "Verifiable Credential signing for Skybridge services: one module, several cryptosuites, transport-neutral errors.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepare": "tsc",
+    "test": "vitest run",
+    "lint": "eslint"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.3"
+  },
+  "engines": {
+    "node": ">=22.0"
+  },
+  "license": "MIT",
+  "publishConfig": {
+    "access": "restricted"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/skybridgeskills/vcalm-status-service",
+    "directory": "packages/vc-signer"
+  }
+}

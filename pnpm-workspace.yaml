@@ -1,0 +1,8 @@
+packages:
+  - service
+  - packages/*
+
+# Native/bundled tooling that legitimately needs its install script.
+onlyBuiltDependencies:
+  - esbuild
+  - unrs-resolver

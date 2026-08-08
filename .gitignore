@@ -1,0 +1,36 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Dependencies
+node_modules/
+.pnpm-store
+package-lock.json
+yarn.lock
+
+# Build output
+dist
+*.tsbuildinfo
+
+# Test output
+coverage
+*.lcov
+
+# Environment
+.env
+.env.*
+!.env.example
+!**/test-fixtures/.env.testing
+
+# Local storage (SQLite files for local/ngrok runs)
+*.sqlite
+*.sqlite-journal
+.local/
+
+# Editor / OS
+.idea
+/.vscode
+*~
+*.sw[nop]
+.DS_Store
