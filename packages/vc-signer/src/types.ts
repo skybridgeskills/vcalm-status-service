@@ -1,9 +1,6 @@
 /**
- * Public type surface for `@skybridgeskills/vc-signer`.
- *
- * The implementation of `createSigner` / `generateKeyMaterial` lands with the
- * cryptosuite work; these types are the contract that both the status service
- * and (later) `dcc-signing-service` build against.
+ * Public type surface for `@skybridgeskills/vc-signer` — the contract that both
+ * the status service and (later) `dcc-signing-service` build against.
  */
 
 /**
@@ -42,13 +39,28 @@ export type KeyFamily = 'ed25519' | 'p256'
  *
  * Ed25519 accepts a multibase seed so existing `TENANT_SEED_*` values keep
  * working. ECDSA has no deterministic seed derivation in the stack we build
- * on, so P-256 material is generated once and persisted at provisioning time.
+ * on, so P-256 material is generated once and persisted at provisioning time —
+ * and both halves are persisted, because the WebCrypto import path cannot
+ * recover a P-256 public key from the secret multikey alone.
  */
 export type KeyMaterial =
   | { kind: 'ed25519-seed'; seed: string }
-  | { kind: 'multikey'; secretKeyMultibase: string }
+  | {
+      kind: 'multikey'
+      publicKeyMultibase: string
+      secretKeyMultibase: string
+    }
 
 export type DidMethod = 'key' | 'web'
+
+/**
+ * A DID document, kept minimal on purpose so the published type surface stays
+ * self-contained for git-dependency consumers.
+ */
+export interface DidDocument {
+  id: string
+  [key: string]: unknown
+}
 
 export interface SignerConfig {
   keyMaterial: KeyMaterial
@@ -61,10 +73,33 @@ export interface SignerConfig {
 export interface Signer {
   did: string
   verificationMethod: string
+  /**
+   * The signer's DID document. For `did:web` this is the document that must be
+   * published at `didUrl`; provisioning writes it out, and nothing else can
+   * derive it once the process exits.
+   */
+  didDocument: DidDocument
   signCredential(
     unsigned: UnsignedCredential,
     opts?: { now?: Date }
   ): Promise<VerifiableCredential>
+}
+
+/**
+ * A live key pair as produced by the `@interop` key suites: enough of the
+ * shape for suite construction, without re-exporting their type surface.
+ */
+export interface SigningKeyPair {
+  id?: string
+  controller?: string
+  signer(): unknown
+}
+
+export interface SuiteOptions {
+  keyPair: SigningKeyPair
+  verificationMethod: string
+  /** Pins `proof.created`; the suites default it to now when absent. */
+  date?: Date
 }
 
 /**
@@ -79,7 +114,10 @@ export interface CryptosuiteDescriptor {
   /**
    * Contexts a credential must declare for this proof to be canonicalizable.
    * VCDM 2.0 (`https://www.w3.org/ns/credentials/v2`) already defines these
-   * terms, so this list only matters for VCDM 1.1 credentials.
+   * terms, but declaring them again is harmless, so they are injected either
+   * way rather than making injection depend on the credential's model version.
    */
   requiredContexts: string[]
+  /** Builds the linked-data proof suite this cryptosuite signs with. */
+  createSuite(options: SuiteOptions): unknown
 }

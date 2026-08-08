@@ -47,4 +47,11 @@ describe('parseConfig', () => {
       parseConfig({ NODE_ENV: 'production', SIGNING_MODE: 'fake' })
     ).toThrow(/SIGNING_MODE=fake/)
   })
+
+  test('accepts the real in-process signer, in production too', () => {
+    expect(
+      parseConfig({ NODE_ENV: 'production', SIGNING_MODE: 'local' }).signing
+        .mode
+    ).toBe('local')
+  })
 })

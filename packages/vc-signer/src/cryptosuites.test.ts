@@ -13,6 +13,7 @@ import type { KeyMaterial } from './types.js'
 const ed25519Seed: KeyMaterial = { kind: 'ed25519-seed', seed: 'z1Aseed' }
 const multikey: KeyMaterial = {
   kind: 'multikey',
+  publicKeyMultibase: 'zDnaPublic',
   secretKeyMultibase: 'zMultikey'
 }
 
@@ -21,6 +22,7 @@ describe('cryptosuite registry', () => {
     for (const suite of SUPPORTED_CRYPTOSUITES) {
       expect(CRYPTOSUITES[suite].cryptosuite).toBe(suite)
       expect(CRYPTOSUITES[suite].requiredContexts.length).toBeGreaterThan(0)
+      expect(typeof CRYPTOSUITES[suite].createSuite).toBe('function')
     }
   })
 

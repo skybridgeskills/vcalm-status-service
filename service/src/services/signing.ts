@@ -26,10 +26,8 @@ export interface SigningService {
   issuerDid(instance: IssuerInstance): Promise<string>
 }
 
-/** `credential.issuer` is either a DID string or an object carrying one. */
-export const credentialIssuerId = (
-  credential: UnsignedCredential
-): string | undefined =>
-  typeof credential.issuer === 'string'
-    ? credential.issuer
-    : credential.issuer?.id
+/**
+ * Re-exported from the signing module so routes and services read the issuer
+ * the same way the signer validates it.
+ */
+export { credentialIssuerId } from '@skybridgeskills/vc-signer'

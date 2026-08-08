@@ -1,4 +1,5 @@
 import { FakeSigningService } from './signing-fake.js'
+import { LocalSigningService } from './signing-local.js'
 import { MemoryStorage } from './storage-memory.js'
 import { MemoryTenantRegistry } from './tenants-memory.js'
 import type { Config } from '../config.js'
@@ -30,6 +31,8 @@ const createSigning = (config: Config): SigningService => {
   switch (config.signing.mode) {
     case 'fake':
       return new FakeSigningService()
+    case 'local':
+      return new LocalSigningService()
     default:
       return unreachable(config.signing.mode, 'signing')
   }
@@ -60,6 +63,7 @@ export const createServices = (config: Config, logger?: Logger): Services => {
 }
 
 export { FakeSigningService } from './signing-fake.js'
+export { LocalSigningService } from './signing-local.js'
 export { MemoryStorage } from './storage-memory.js'
 export { MemoryTenantRegistry } from './tenants-memory.js'
 export { credentialIssuerId } from './signing.js'

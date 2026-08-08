@@ -11,8 +11,11 @@ and the tenant registry are interfaces chosen by configuration.
 ## Status
 
 Early. The scaffold, configuration, error surface and service interfaces are in
-place with in-memory implementations. The VCALM status surface, real signing,
-SQL storage, tenancy and provisioning land next — see [Roadmap](#roadmap).
+place, and signing is real: `@skybridgeskills/vc-signer` signs under
+`eddsa-rdfc-2022`, `ecdsa-rdfc-2019` and legacy `Ed25519Signature2020`, over
+`did:key` or `did:web`. Storage and the tenant registry are still in-memory.
+The VCALM status surface, SQL storage, tenancy and provisioning land next — see
+[Roadmap](#roadmap).
 
 ## The VCALM status surface
 
@@ -61,7 +64,9 @@ packages/vc-signer/   @skybridgeskills/vc-signer — VC signing, several cryptos
 
 ## Getting started
 
-Requires Node 22+ and pnpm 10 (`corepack enable`).
+Requires Node 24+ and pnpm 10 (`corepack enable`). The Node floor comes from
+the `@interop` credential libraries — see
+[the stack ADR](docs/adr/2026-08-08-interop-credential-stack.md).
 
 ```bash
 pnpm install
@@ -82,23 +87,30 @@ invalid value fails the boot rather than defaulting silently. See
 [.env.example](.env.example) for the full list with defaults.
 
 The backend for each service interface is a mode: `STORAGE_MODE`,
-`SIGNING_MODE`, `TENANT_REGISTRY_MODE`. `SIGNING_MODE=fake` is a test double
-that produces an unverifiable proof, and configuration refuses it when
-`NODE_ENV=production`.
+`SIGNING_MODE`, `TENANT_REGISTRY_MODE`.
+
+`SIGNING_MODE=local` signs in-process with `@skybridgeskills/vc-signer`, using
+the key material on the issuer instance a list is bound to.
+`SIGNING_MODE=fake`, the default, is a test double that produces an
+unverifiable proof; configuration refuses it when `NODE_ENV=production`, so a
+production deployment has to choose its signer explicitly.
 
 ## Deployment
 
-The image is a five-stage `node:22-slim` build; the container listens on
+The image is a five-stage `node:24-slim` build; the container listens on
 `0.0.0.0:$PORT` and answers `/healthz` for the load balancer's target group.
 All configuration arrives as environment variables, so the same image runs
 locally, behind ngrok, and in ECS.
 
 ## Roadmap
 
-1. `@skybridgeskills/vc-signer` — real signing across `eddsa-rdfc-2022`,
-   `ecdsa-rdfc-2019` and legacy `Ed25519Signature2020`.
+1. ~~`@skybridgeskills/vc-signer` — real signing across `eddsa-rdfc-2022`,
+   `ecdsa-rdfc-2019` and legacy `Ed25519Signature2020`.~~ Done; see
+   [packages/vc-signer](packages/vc-signer/README.md).
 2. SQL storage (Kysely; SQLite locally, Postgres deployed) with sign-on-update.
-3. Tenancy, bearer auth, the tenant registry and the authorized-domain check.
+3. Tenancy, bearer auth, the tenant registry and the authorized-domain check —
+   including `SIGNING_MODE=http`, which calls a provisioned
+   `dcc-signing-service` and needs that tenancy's per-tenant tokens.
 4. The VCALM status surface routes.
 5. `pnpm provision-tenant` — onboards a tenant end to end.
 6. The allocate endpoint and issuer integration.
