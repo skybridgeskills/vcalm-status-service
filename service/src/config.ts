@@ -14,7 +14,7 @@ export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
  * interface; adding one is a new enum member plus a case in the factory.
  */
 export type StorageMode = 'memory'
-export type SigningMode = 'fake'
+export type SigningMode = 'fake' | 'local'
 export type TenantRegistryMode = 'memory'
 
 export interface Config {
@@ -53,7 +53,7 @@ const envSchema = z.object({
   PUBLIC_BASE_URL: z.string().url().optional(),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   STORAGE_MODE: z.enum(['memory']).default('memory'),
-  SIGNING_MODE: z.enum(['fake']).default('fake'),
+  SIGNING_MODE: z.enum(['fake', 'local']).default('fake'),
   TENANT_REGISTRY_MODE: z.enum(['memory']).default('memory')
 })
 

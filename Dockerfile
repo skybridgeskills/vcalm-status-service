@@ -1,6 +1,10 @@
-FROM node:22-slim AS base
+FROM node:24-slim AS base
 WORKDIR /app
-RUN corepack enable && corepack prepare --activate
+# Only `enable` here: `corepack prepare --activate` reads `packageManager` from
+# a project, and no manifest has been copied yet. The stages below copy their
+# manifests first, so corepack pins the version on the first `pnpm` call.
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+RUN corepack enable
 
 # Manifests only, so a source-only change reuses the install layer.
 FROM base AS deps

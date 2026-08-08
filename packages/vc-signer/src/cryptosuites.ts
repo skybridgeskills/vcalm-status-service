@@ -1,13 +1,28 @@
+import { DataIntegrityProof } from '@digitalbazaar/data-integrity'
+import { cryptosuite as ecdsaRdfc2019 } from '@digitalbazaar/ecdsa-rdfc-2019-cryptosuite'
+import { Ed25519Signature2020 } from '@digitalbazaar/ed25519-signature-2020'
+import { cryptosuite as eddsaRdfc2022 } from '@digitalbazaar/eddsa-rdfc-2022-cryptosuite'
 import { SigningError } from './errors.js'
 import type {
   Cryptosuite,
   CryptosuiteDescriptor,
-  KeyMaterial
+  KeyMaterial,
+  SuiteOptions
 } from './types.js'
 
 const DATA_INTEGRITY_V2 = 'https://w3id.org/security/data-integrity/v2'
 const ED25519_SIGNATURE_2020_V1 =
   'https://w3id.org/security/suites/ed25519-2020/v1'
+
+/**
+ * A Data Integrity suite is built per signing call rather than memoized with
+ * the signer, because `date` — which pins `proof.created` — is a constructor
+ * argument. Key derivation, the expensive part, is memoized in `createSigner`.
+ */
+const dataIntegrity =
+  (cryptosuite: unknown) =>
+  ({ keyPair, date }: SuiteOptions) =>
+    new DataIntegrityProof({ signer: keyPair.signer(), cryptosuite, date })
 
 /**
  * The suites this module signs with. Adding a suite (`ecdsa-sd-2023`,
@@ -21,19 +36,29 @@ export const CRYPTOSUITES: Readonly<
     cryptosuite: 'eddsa-rdfc-2022',
     proofType: 'DataIntegrityProof',
     keyFamily: 'ed25519',
-    requiredContexts: [DATA_INTEGRITY_V2]
+    requiredContexts: [DATA_INTEGRITY_V2],
+    createSuite: dataIntegrity(eddsaRdfc2022)
   },
   'ecdsa-rdfc-2019': {
     cryptosuite: 'ecdsa-rdfc-2019',
     proofType: 'DataIntegrityProof',
     keyFamily: 'p256',
-    requiredContexts: [DATA_INTEGRITY_V2]
+    requiredContexts: [DATA_INTEGRITY_V2],
+    createSuite: dataIntegrity(ecdsaRdfc2019)
   },
   Ed25519Signature2020: {
     cryptosuite: 'Ed25519Signature2020',
     proofType: 'Ed25519Signature2020',
     keyFamily: 'ed25519',
-    requiredContexts: [ED25519_SIGNATURE_2020_V1]
+    requiredContexts: [ED25519_SIGNATURE_2020_V1],
+    // `signer` + `verificationMethod` rather than `key`: the key pair exports
+    // Multikey, which this legacy suite would not accept as a `key`.
+    createSuite: ({ keyPair, verificationMethod, date }: SuiteOptions) =>
+      new Ed25519Signature2020({
+        signer: keyPair.signer(),
+        verificationMethod,
+        date
+      })
   }
 })
 
