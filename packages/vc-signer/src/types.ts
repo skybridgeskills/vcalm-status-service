@@ -120,4 +120,10 @@ export interface CryptosuiteDescriptor {
   requiredContexts: string[]
   /** Builds the linked-data proof suite this cryptosuite signs with. */
   createSuite(options: SuiteOptions): unknown
+  /**
+   * The same suite with no key attached, for checking a proof rather than
+   * making one — verification takes the key from the proof's verification
+   * method, so this needs nothing from the signer.
+   */
+  createVerificationSuite(): unknown
 }

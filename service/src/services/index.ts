@@ -1,7 +1,9 @@
 import { FakeSigningService } from './signing-fake.js'
 import { LocalSigningService } from './signing-local.js'
 import { MemoryStorage } from './storage-memory.js'
+import { SqlStorage } from './storage-sql.js'
 import { MemoryTenantRegistry } from './tenants-memory.js'
+import { StatusListManager } from '../status-lists/index.js'
 import type { Config } from '../config.js'
 import type { Logger } from '../logger.js'
 import type { SigningService } from './signing.js'
@@ -12,6 +14,8 @@ export interface Services {
   storage: StorageService
   signing: SigningService
   tenants: TenantRegistry
+  /** The domain layer the routes talk to, over the three services above. */
+  statusLists: StatusListManager
 }
 
 const unreachable = (mode: never, kind: string): never => {
@@ -22,8 +26,12 @@ const createStorage = (config: Config): StorageService => {
   switch (config.storage.mode) {
     case 'memory':
       return new MemoryStorage()
+    case 'sqlite':
+      return new SqlStorage({ dialect: 'sqlite', file: config.storage.file })
+    case 'postgres':
+      return new SqlStorage({ dialect: 'postgres', url: config.storage.url })
     default:
-      return unreachable(config.storage.mode, 'storage')
+      return unreachable(config.storage, 'storage')
   }
 }
 
@@ -49,10 +57,19 @@ const createTenantRegistry = (config: Config): TenantRegistry => {
 
 /** Builds the service graph from config. Nothing else selects an implementation. */
 export const createServices = (config: Config, logger?: Logger): Services => {
+  const storage = createStorage(config)
+  const signing = createSigning(config)
+  const tenants = createTenantRegistry(config)
   const services: Services = {
-    storage: createStorage(config),
-    signing: createSigning(config),
-    tenants: createTenantRegistry(config)
+    storage,
+    signing,
+    tenants,
+    statusLists: new StatusListManager({
+      storage,
+      signing,
+      tenants,
+      publicBaseUrl: config.publicBaseUrl
+    })
   }
   logger?.info('services configured', {
     storage: config.storage.mode,
@@ -65,6 +82,7 @@ export const createServices = (config: Config, logger?: Logger): Services => {
 export { FakeSigningService } from './signing-fake.js'
 export { LocalSigningService } from './signing-local.js'
 export { MemoryStorage } from './storage-memory.js'
+export { SqlStorage } from './storage-sql.js'
 export { MemoryTenantRegistry } from './tenants-memory.js'
 export { credentialIssuerId } from './signing.js'
 export {
@@ -73,6 +91,7 @@ export {
   StorageError
 } from './storage.js'
 export { resolveIssuerInstance } from './tenants.js'
+export type { SqlStorageOptions } from './storage-sql.js'
 export type { IssuerInstance } from './issuer-instance.js'
 export type { SigningService } from './signing.js'
 export type {
