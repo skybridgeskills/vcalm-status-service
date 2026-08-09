@@ -50,8 +50,40 @@ describe('parseConfig', () => {
 
   test('accepts the real in-process signer, in production too', () => {
     expect(
-      parseConfig({ NODE_ENV: 'production', SIGNING_MODE: 'local' }).signing
-        .mode
+      parseConfig({
+        NODE_ENV: 'production',
+        SIGNING_MODE: 'local',
+        STORAGE_MODE: 'sqlite'
+      }).signing.mode
     ).toBe('local')
+  })
+
+  test('refuses storage that forgets its lists in production', () => {
+    expect(() =>
+      parseConfig({ NODE_ENV: 'production', SIGNING_MODE: 'local' })
+    ).toThrow(/STORAGE_MODE=memory/)
+  })
+
+  test('carries the sqlite file, defaulted for a plain docker run', () => {
+    expect(parseConfig({ STORAGE_MODE: 'sqlite' }).storage).toEqual({
+      mode: 'sqlite',
+      file: './data/status-lists.db'
+    })
+    expect(
+      parseConfig({ STORAGE_MODE: 'sqlite', SQLITE_FILE: '/srv/lists.db' })
+        .storage
+    ).toEqual({ mode: 'sqlite', file: '/srv/lists.db' })
+  })
+
+  test('carries the postgres DSN, and refuses the mode without one', () => {
+    expect(
+      parseConfig({
+        STORAGE_MODE: 'postgres',
+        DATABASE_URL: 'postgres://localhost/status'
+      }).storage
+    ).toEqual({ mode: 'postgres', url: 'postgres://localhost/status' })
+    expect(() => parseConfig({ STORAGE_MODE: 'postgres' })).toThrow(
+      /DATABASE_URL/
+    )
   })
 })

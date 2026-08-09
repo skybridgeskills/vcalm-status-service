@@ -18,6 +18,8 @@ export { SigningError, isSigningError } from './errors.js'
 export type { SigningErrorCode } from './errors.js'
 export { decodeSeed, generateKeyMaterial } from './key-material.js'
 export { createSigner } from './signer.js'
+export { proofCryptosuite, verifyCredential } from './verify.js'
+export type { VerificationResult } from './verify.js'
 export type {
   Cryptosuite,
   CryptosuiteDescriptor,

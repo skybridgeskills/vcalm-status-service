@@ -33,6 +33,23 @@ A signer exposes `did`, `verificationMethod`, `didDocument` and
 `signCredential(credential, { now })`. `now` pins `proof.created`, so signing
 the same bytes twice produces the same proof.
 
+### Verifying
+
+The other half, for asserting that what was signed actually verifies — a
+service checking its own output, a provisioning check, an end-to-end run
+against a deployed instance:
+
+```ts
+import { verifyCredential } from '@skybridgeskills/vc-signer'
+
+const { verified, error } = await verifyCredential({ credential })
+```
+
+The suite is read off the proof, so nothing has to be told which one was used.
+`did:key` resolves from the identifier itself. A `did:web` credential whose
+document is not published yet is verified by supplying it:
+`verifyCredential({ credential, didDocument: signer.didDocument })`.
+
 ### Cryptosuites
 
 | Cryptosuite            | Proof type             | Key family |
@@ -46,8 +63,8 @@ byte-compatible behavior after it adopts this module; new issuance should use a
 Data Integrity suite.
 
 `CRYPTOSUITES` is the registry — a new suite (`ecdsa-sd-2023`, `bbs-2023`) is a
-row there plus its `createSuite` implementation, and nothing else in the module
-changes.
+row there plus its `createSuite` and `createVerificationSuite` implementations,
+and nothing else in the module changes.
 
 Both DID methods are supported for every suite, and every cell of that matrix
 has a sign-then-verify test. `did:web` requires a `didUrl`; the document that
@@ -81,6 +98,7 @@ const material = await generateKeyMaterial('ecdsa-rdfc-2019')
 | `invalid-key-material`    | Material the suite cannot use, an undecodable seed, `didMethod: 'web'` without a `didUrl` |
 | `issuer-mismatch`         | `credential.issuer` is not the signer's DID                                               |
 | `missing-context`         | `@context` does not begin with a VCDM base context                                        |
+| `invalid-credential`      | A credential handed to `verifyCredential` carries no usable proof                         |
 
 **No silent issuer mutation.** `signCredential` validates that
 `credential.issuer` matches the signer DID and throws rather than rewriting it.

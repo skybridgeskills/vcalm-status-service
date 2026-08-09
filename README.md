@@ -11,11 +11,12 @@ and the tenant registry are interfaces chosen by configuration.
 ## Status
 
 Early. The scaffold, configuration, error surface and service interfaces are in
-place, and signing is real: `@skybridgeskills/vc-signer` signs under
+place; signing is real (`@skybridgeskills/vc-signer` signs under
 `eddsa-rdfc-2022`, `ecdsa-rdfc-2019` and legacy `Ed25519Signature2020`, over
-`did:key` or `did:web`. Storage and the tenant registry are still in-memory.
-The VCALM status surface, SQL storage, tenancy and provisioning land next — see
-[Roadmap](#roadmap).
+`did:key` or `did:web`); and status lists are stored, allocated and re-signed on
+update against SQLite or Postgres. The tenant registry is still in-memory, and
+the HTTP surface is not mounted yet — the routes, tenancy and provisioning land
+next, see [Roadmap](#roadmap).
 
 ## The VCALM status surface
 
@@ -55,6 +56,30 @@ Errors are [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) problem
 documents (`application/problem+json`), which fills a gap in the VCALM
 description — it declares no error body for these operations.
 
+## Storage
+
+Two implementations of one interface. `MemoryStorage` is for tests and
+throwaway runs; `SqlStorage` is a single Kysely implementation over two
+dialects, so both share one schema and one set of queries:
+
+| `STORAGE_MODE` | Backend                          | For                                        |
+| -------------- | -------------------------------- | ------------------------------------------ |
+| `memory`       | process memory                   | tests; refused when `NODE_ENV=production`  |
+| `sqlite`       | `SQLITE_FILE` via better-sqlite3 | local and ngrok runs — a file and a volume |
+| `postgres`     | `DATABASE_URL` via `pg`          | the deployed wrapper                       |
+
+Migrations are Kysely's, applied at startup, so a plain `docker run` with a
+volume comes up ready. Two tables: `status_lists` (the list, its
+characteristics, its bits, and the signed credential the public GET serves) and
+`index_allocations` (which credential holds which index, and the constraint
+that stops two of them holding the same one).
+
+Every bit flip runs inside one transaction that holds the list row — Postgres
+with `select … for update`, SQLite by holding its single writer — decodes the
+bitstring, sets the bit, re-encodes, re-signs and stores both. Concurrent flips
+serialize instead of overwriting each other, and a redundant write returns
+without touching the credential or the version.
+
 ## Repository layout
 
 ```
@@ -89,6 +114,12 @@ invalid value fails the boot rather than defaulting silently. See
 The backend for each service interface is a mode: `STORAGE_MODE`,
 `SIGNING_MODE`, `TENANT_REGISTRY_MODE`.
 
+`STORAGE_MODE=sqlite` reads `SQLITE_FILE` (default `./data/status-lists.db`,
+created along with its directory); `STORAGE_MODE=postgres` requires
+`DATABASE_URL`. `STORAGE_MODE=memory`, the default, forgets every list when the
+process exits — which would break every credential already pointing at one — so
+configuration refuses it when `NODE_ENV=production`.
+
 `SIGNING_MODE=local` signs in-process with `@skybridgeskills/vc-signer`, using
 the key material on the issuer instance a list is bound to.
 `SIGNING_MODE=fake`, the default, is a test double that produces an
@@ -107,7 +138,8 @@ locally, behind ngrok, and in ECS.
 1. ~~`@skybridgeskills/vc-signer` — real signing across `eddsa-rdfc-2022`,
    `ecdsa-rdfc-2019` and legacy `Ed25519Signature2020`.~~ Done; see
    [packages/vc-signer](packages/vc-signer/README.md).
-2. SQL storage (Kysely; SQLite locally, Postgres deployed) with sign-on-update.
+2. ~~SQL storage (Kysely; SQLite locally, Postgres deployed) with
+   sign-on-update.~~ Done; see [Storage](#storage).
 3. Tenancy, bearer auth, the tenant registry and the authorized-domain check —
    including `SIGNING_MODE=http`, which calls a provisioned
    `dcc-signing-service` and needs that tenancy's per-tenant tokens.

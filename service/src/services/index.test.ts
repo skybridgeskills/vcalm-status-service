@@ -3,8 +3,10 @@ import { createServices } from './index.js'
 import { FakeSigningService } from './signing-fake.js'
 import { LocalSigningService } from './signing-local.js'
 import { MemoryStorage } from './storage-memory.js'
+import { SqlStorage } from './storage-sql.js'
 import { MemoryTenantRegistry } from './tenants-memory.js'
 import { parseConfig } from '../config.js'
+import { StatusListManager } from '../status-lists/index.js'
 
 describe('createServices', () => {
   test('builds the in-memory graph selected by config', () => {
@@ -12,6 +14,22 @@ describe('createServices', () => {
     expect(services.storage).toBeInstanceOf(MemoryStorage)
     expect(services.signing).toBeInstanceOf(FakeSigningService)
     expect(services.tenants).toBeInstanceOf(MemoryTenantRegistry)
+    expect(services.statusLists).toBeInstanceOf(StatusListManager)
+  })
+
+  test('selects one SQL implementation for both dialects', () => {
+    // Constructed, not connected: nothing talks to a database until init().
+    expect(
+      createServices(parseConfig({ STORAGE_MODE: 'sqlite' })).storage
+    ).toBeInstanceOf(SqlStorage)
+    expect(
+      createServices(
+        parseConfig({
+          STORAGE_MODE: 'postgres',
+          DATABASE_URL: 'postgres://localhost/status'
+        })
+      ).storage
+    ).toBeInstanceOf(SqlStorage)
   })
 
   test('selects the in-process signer by configuration alone', () => {

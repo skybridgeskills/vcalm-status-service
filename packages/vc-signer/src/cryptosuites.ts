@@ -24,6 +24,10 @@ const dataIntegrity =
   ({ keyPair, date }: SuiteOptions) =>
     new DataIntegrityProof({ signer: keyPair.signer(), cryptosuite, date })
 
+/** The same suite with no key: verification reads the key off the proof. */
+const dataIntegrityVerifier = (cryptosuite: unknown) => () =>
+  new DataIntegrityProof({ cryptosuite })
+
 /**
  * The suites this module signs with. Adding a suite (`ecdsa-sd-2023`,
  * `bbs-2023`) is a new row here plus its `createSuite` implementation — the
@@ -37,14 +41,16 @@ export const CRYPTOSUITES: Readonly<
     proofType: 'DataIntegrityProof',
     keyFamily: 'ed25519',
     requiredContexts: [DATA_INTEGRITY_V2],
-    createSuite: dataIntegrity(eddsaRdfc2022)
+    createSuite: dataIntegrity(eddsaRdfc2022),
+    createVerificationSuite: dataIntegrityVerifier(eddsaRdfc2022)
   },
   'ecdsa-rdfc-2019': {
     cryptosuite: 'ecdsa-rdfc-2019',
     proofType: 'DataIntegrityProof',
     keyFamily: 'p256',
     requiredContexts: [DATA_INTEGRITY_V2],
-    createSuite: dataIntegrity(ecdsaRdfc2019)
+    createSuite: dataIntegrity(ecdsaRdfc2019),
+    createVerificationSuite: dataIntegrityVerifier(ecdsaRdfc2019)
   },
   Ed25519Signature2020: {
     cryptosuite: 'Ed25519Signature2020',
@@ -58,7 +64,8 @@ export const CRYPTOSUITES: Readonly<
         signer: keyPair.signer(),
         verificationMethod,
         date
-      })
+      }),
+    createVerificationSuite: () => new Ed25519Signature2020()
   }
 })
 

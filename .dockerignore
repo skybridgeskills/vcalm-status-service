@@ -6,6 +6,7 @@
 .husky
 .pnpm-store
 **/coverage
+**/data
 **/dist
 **/node_modules
 logs

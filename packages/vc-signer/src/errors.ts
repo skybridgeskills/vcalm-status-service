@@ -8,6 +8,8 @@ export type SigningErrorCode =
   | 'issuer-mismatch'
   | 'invalid-key-material'
   | 'missing-context'
+  /** A credential handed to `verifyCredential` carries no usable proof. */
+  | 'invalid-credential'
 
 export class SigningError extends Error {
   override readonly name = 'SigningError'

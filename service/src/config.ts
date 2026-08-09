@@ -13,9 +13,19 @@ export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
  * Backend selection. Each mode names an implementation of the matching
  * interface; adding one is a new enum member plus a case in the factory.
  */
-export type StorageMode = 'memory'
+export type StorageMode = 'memory' | 'sqlite' | 'postgres'
 export type SigningMode = 'fake' | 'local'
 export type TenantRegistryMode = 'memory'
+
+/**
+ * Storage carries what its backend needs to connect, so nothing downstream
+ * reads the environment again. `sqlite` and `postgres` are one implementation
+ * over two dialects, not two backends.
+ */
+export type StorageConfig =
+  | { mode: 'memory' }
+  | { mode: 'sqlite'; file: string }
+  | { mode: 'postgres'; url: string }
 
 export interface Config {
   nodeEnv: NodeEnv
@@ -28,12 +38,15 @@ export interface Config {
    */
   publicBaseUrl: string
   logLevel: LogLevel
-  storage: { mode: StorageMode }
+  storage: StorageConfig
   signing: { mode: SigningMode }
   tenantRegistry: { mode: TenantRegistryMode }
 }
 
 const DEFAULT_PORT = 4008
+
+/** Relative to the working directory, and inside the container's volume mount. */
+const DEFAULT_SQLITE_FILE = './data/status-lists.db'
 
 /** dotenv-style loaders yield `''` for a declared-but-empty var; treat as unset. */
 const withoutEmptyValues = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv => {
@@ -52,10 +65,31 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(DEFAULT_PORT),
   PUBLIC_BASE_URL: z.string().url().optional(),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
-  STORAGE_MODE: z.enum(['memory']).default('memory'),
+  STORAGE_MODE: z.enum(['memory', 'sqlite', 'postgres']).default('memory'),
+  SQLITE_FILE: z.string().min(1).default(DEFAULT_SQLITE_FILE),
+  DATABASE_URL: z.string().min(1).optional(),
   SIGNING_MODE: z.enum(['fake', 'local']).default('fake'),
   TENANT_REGISTRY_MODE: z.enum(['memory']).default('memory')
 })
+
+type EnvValues = z.infer<typeof envSchema>
+
+const parseStorage = (values: EnvValues): StorageConfig => {
+  switch (values.STORAGE_MODE) {
+    case 'memory':
+      return { mode: 'memory' }
+    case 'sqlite':
+      return { mode: 'sqlite', file: values.SQLITE_FILE }
+    case 'postgres': {
+      if (values.DATABASE_URL === undefined) {
+        throw new ConfigError(
+          'Invalid environment configuration — STORAGE_MODE=postgres requires DATABASE_URL'
+        )
+      }
+      return { mode: 'postgres', url: values.DATABASE_URL }
+    }
+  }
+}
 
 export class ConfigError extends Error {
   override readonly name = 'ConfigError'
@@ -82,6 +116,15 @@ export const parseConfig = (env: NodeJS.ProcessEnv): Config => {
     )
   }
 
+  // Canonical list URLs are baked into issued credentials forever. A process
+  // that forgets its lists when it restarts breaks every one of them, so
+  // in-memory storage is a test and throwaway-run backend only.
+  if (values.STORAGE_MODE === 'memory' && values.NODE_ENV === 'production') {
+    throw new ConfigError(
+      'Invalid environment configuration — STORAGE_MODE=memory is refused when NODE_ENV=production'
+    )
+  }
+
   return {
     nodeEnv: values.NODE_ENV,
     port: values.PORT,
@@ -89,7 +132,7 @@ export const parseConfig = (env: NodeJS.ProcessEnv): Config => {
       values.PUBLIC_BASE_URL ?? `http://localhost:${values.PORT}`
     ),
     logLevel: values.LOG_LEVEL,
-    storage: { mode: values.STORAGE_MODE },
+    storage: parseStorage(values),
     signing: { mode: values.SIGNING_MODE },
     tenantRegistry: { mode: values.TENANT_REGISTRY_MODE }
   }
