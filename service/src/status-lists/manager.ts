@@ -65,9 +65,15 @@ export interface StatusChange {
 }
 
 /**
- * Random probes before giving up. Probing degrades only as a list fills, and a
- * list that fails 64 probes is far past the point where the tenant should have
- * been issuing into a new one.
+ * Random probes before giving up. Probing costs `1 / (1 - fill)` attempts on
+ * average, so this cap only engages on a list that is nearly full: it starts
+ * failing around 90% (~118,000 entries of the 131,072 minimum).
+ *
+ * That is a backstop, not a budget. Lists are meant to be rolled at **45–55%
+ * fill**, where allocation costs two probes and this constant is unreachable —
+ * creating a list is one signature and one insert, so there is nothing to gain
+ * by packing one. See the storage ADR; `countAllocations` is what a caller
+ * watches to decide.
  */
 const ALLOCATION_ATTEMPTS = 64
 

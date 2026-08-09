@@ -87,3 +87,45 @@ Supporting choices inside that:
   two.
 - A dialect Kysely does not support is a dialect we do not support. That is
   acceptable: the two we need are the two that exist.
+
+### Random allocation sets a fill target, not just a cap
+
+Probing for a free index costs `1 / (1 - fill)` attempts on average, each one a
+database round trip, and the allocator gives up after 64. That makes fill —
+not table size, not lock contention — the first thing about this design that
+degrades:
+
+| Fill | Expected probes | Allocation failures per 10k |
+| ---- | --------------- | --------------------------- |
+| 50%  | 2               | 0                           |
+| 75%  | 4               | 0                           |
+| 90%  | 10              | 12                          |
+| 95%  | 20              | 375                         |
+| 99%  | 100             | 5,256                       |
+
+So a 131,072-entry list has a practical wall around **118,000 credentials**,
+where `list-exhausted` starts appearing. Nothing about the schema or the
+constraints is involved; b-tree lookups stay flat well past any list size this
+service will hold.
+
+**That wall is not the operating point. Target 45–55% fill and roll onto a new
+list.** At half full, allocation costs two probes and the failure probability is
+around 10⁻²⁰ — the mechanism simply never engages. Running lists closer to full
+buys nothing and trades a flat cost curve for a steep one.
+
+Rolling early is affordable because creating a list is cheap: one all-zero
+bitstring (69 bytes encoded), one signature, one insert — the same order of
+work as a single bit flip. There is no per-list fixed cost to amortize, no
+capacity to reserve, and lists are independent, so spreading writes across more
+of them also spreads the per-list row lock.
+
+Nor does under-filling cost privacy in any way that matters here. The herd a
+holder hides in is the set of credentials actually allocated on their list, so
+a nearly empty list is a weak one — but 50% of 131,072 is roughly 65,000
+credentials sharing an entry, which is far past the point where the anonymity
+set is the weak link. BSL §3.2's 131,072 floor governs the size of the list we
+publish, and that floor is enforced at creation regardless of how much of it we
+intend to use.
+
+`countAllocations(listId)` exists to drive this. The service does not roll lists
+on its own — whichever flow triggers allocation owns that decision.
