@@ -11,6 +11,10 @@ export {
   type StatusListMaterial
 } from './credential.js'
 export {
+  bitstringStatusListEntry,
+  type BitstringStatusListEntry
+} from './entry.js'
+export {
   StatusListError,
   isStatusListError,
   type StatusListErrorCode

@@ -30,9 +30,8 @@ Three operations, per the VCALM OpenAPI description:
 | Fetch a status list credential     | `GET /status-lists/{id}`   | public |
 | Set or clear a credential's status | `POST /credentials/status` | Bearer |
 
-Planned: `POST /credentials/status/allocate`, a **documented non-VCALM
-extension** that hands an issuer a status list entry before it signs a
-credential.
+Plus `POST /credentials/status/allocate` (Bearer), a **documented non-VCALM
+extension** — see [Allocating an entry](#allocating-an-entry).
 
 ### Using it
 
@@ -62,6 +61,38 @@ curl -i "$LIST_URL"
 Requests are validated strictly: an unknown key — including inside `options`
 and `credentialStatus` — is a 400 rather than something silently ignored.
 
+### Allocating an entry
+
+VCALM has no allocate operation: attaching a status entry is issuer-instance
+configuration on its issue endpoint. This service is standalone, so something
+has to hand an issuer an entry before it signs, and
+`POST /credentials/status/allocate` is it — same path and same
+credential-in, credential-out shape as DCC's `status-service-db`, so an existing
+caller keeps its flow.
+
+```bash
+# Post the unsigned credential; get it back with a credentialStatus attached.
+curl -X POST localhost:4008/credentials/status/allocate \
+  -H "Authorization: Bearer $TENANT_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"@context":["https://www.w3.org/ns/credentials/v2"],
+       "id":"urn:uuid:…","type":["VerifiableCredential"],
+       "issuer":"did:example:issuer","credentialSubject":{}}'
+```
+
+The wrapped form `{"credential": {…}, "options": {"statusPurpose": "suspension"}}`
+selects a purpose, or a specific list with `"statusListId"`.
+
+Two differences from DCC's endpoint are deliberate: it needs a Bearer token like
+every other write, and it attaches one entry for one purpose rather than
+revocation and suspension together. It does **not** touch `@context` — a VCDM
+2.0 credential already defines the entry terms, and quietly editing a document
+somebody is about to sign would be the worse surprise.
+
+The service picks the list. A tenant's newest list for that purpose is used
+until it reaches **50% fill**, then allocation rolls onto a fresh one; if there
+is no list at all, one is created. Rolling early is deliberate — see
+[the storage ADR](docs/adr/2026-08-08-sign-on-update-sql-storage.md).
+
 Design commitments worth knowing before reading the code:
 
 - **Sign on update, never on GET.** The signed list credential is materialized
@@ -76,8 +107,8 @@ Design commitments worth knowing before reading the code:
   credentials point at it forever.
 - **One list per status purpose** (`revocation`, `suspension`), with the BSL
   herd-privacy floor of 131,072 entries enforced at creation.
-- **Random index allocation**, so a list does not leak issuance order. Lists are
-  meant to be rolled at 45–55% fill rather than packed — see
+- **Random index allocation**, so a list does not leak issuance order. Allocation
+  rolls onto a new list at 50% fill rather than packing one — see
   [the storage ADR](docs/adr/2026-08-08-sign-on-update-sql-storage.md).
 - **Fresh by default.** The GET answers `Cache-Control: no-cache` with a version
   `ETag` and honours `If-None-Match`, so no cache can mask a revocation. A
@@ -259,7 +290,8 @@ locally, behind ngrok, and in ECS.
    [The VCALM status surface](#the-vcalm-status-surface).
 5. ~~`pnpm provision-tenant` — onboards a tenant end to end.~~ Done; see
    [Provisioning a tenant](#provisioning-a-tenant).
-6. The allocate endpoint and issuer integration.
+6. ~~The allocate endpoint and issuer integration.~~ Done; see
+   [Allocating an entry](#allocating-an-entry).
 
 ## Acknowledgments
 

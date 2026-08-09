@@ -31,6 +31,8 @@ export const createTestApp = async (
     authorizedDomains?: string[]
     /** Added alongside `acme`, sharing the same key material. */
     extraTenants?: string[]
+    /** Fill fraction at which allocation rolls onto a new list. */
+    rollAtFill?: number
   } = {}
 ): Promise<TestApp> => {
   const keyMaterial = await generateKeyMaterial('eddsa-rdfc-2022')
@@ -70,7 +72,10 @@ export const createTestApp = async (
       storage,
       signing,
       tenants,
-      publicBaseUrl: config.publicBaseUrl
+      publicBaseUrl: config.publicBaseUrl,
+      ...(options.rollAtFill === undefined
+        ? {}
+        : { rollAtFill: options.rollAtFill })
     })
   }
 

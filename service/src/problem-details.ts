@@ -105,6 +105,7 @@ const STATUS_LIST_STATUS: Record<StatusListErrorCode, number> = {
   'list-too-short': 400,
   'unsupported-characteristics': 400,
   'list-not-found': 404,
+  'list-purpose-mismatch': 400,
   // The list exists but its tenant or key is gone from the registry: a
   // provisioning failure the caller can do nothing about.
   'issuer-instance-unavailable': 500,
