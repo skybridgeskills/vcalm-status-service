@@ -16,8 +16,9 @@ place; signing is real (`@skybridgeskills/vc-signer` signs under
 `did:key` or `did:web`); and status lists are stored, allocated and re-signed on
 update against SQLite or Postgres. Tenancy is real too: tenants come from the
 registry, Bearer authentication resolves them, and a list is only served under a
-domain its tenant holds. The HTTP surface is not mounted yet — the routes and
-the provisioning CLI land next, see [Roadmap](#roadmap).
+domain its tenant holds. The three VCALM status operations are live. What is
+left is the provisioning CLI and the allocate endpoint that serves an issuer —
+see [Roadmap](#roadmap).
 
 ## The VCALM status surface
 
@@ -29,8 +30,37 @@ Three operations, per the VCALM OpenAPI description:
 | Fetch a status list credential     | `GET /status-lists/{id}`   | public |
 | Set or clear a credential's status | `POST /credentials/status` | Bearer |
 
-Plus `POST /credentials/status/allocate`, a **documented non-VCALM extension**
-that hands an issuer a status list entry before it signs a credential.
+Planned: `POST /credentials/status/allocate`, a **documented non-VCALM
+extension** that hands an issuer a status list entry before it signs a
+credential.
+
+### Using it
+
+```bash
+# Create a list. The response carries the signed credential and its permanent
+# URL, which is also the Location header.
+curl -X POST localhost:4008/status-lists \
+  -H "Authorization: Bearer $TENANT_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"statusPurpose":"revocation"}'
+```
+
+```bash
+# Revoke index 4242 of that list. `credentialStatus` may instead name only a
+# credentialId and purpose, and the service resolves the entry it allocated.
+curl -X POST localhost:4008/credentials/status \
+  -H "Authorization: Bearer $TENANT_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"credentialId":"urn:uuid:…","status":true,
+       "credentialStatus":{"type":"BitstringStatusList","statusPurpose":"revocation",
+                           "statusListIndex":"4242","statusListCredential":"'"$LIST_URL"'"}}'
+```
+
+```bash
+# Anyone can read it, and the flip is already there.
+curl -i "$LIST_URL"
+```
+
+Requests are validated strictly: an unknown key — including inside `options`
+and `credentialStatus` — is a 400 rather than something silently ignored.
 
 Design commitments worth knowing before reading the code:
 
@@ -46,7 +76,12 @@ Design commitments worth knowing before reading the code:
   credentials point at it forever.
 - **One list per status purpose** (`revocation`, `suspension`), with the BSL
   herd-privacy floor of 131,072 entries enforced at creation.
-- **Random index allocation**, so a list does not leak issuance order.
+- **Random index allocation**, so a list does not leak issuance order. Lists are
+  meant to be rolled at 45–55% fill rather than packed — see
+  [the storage ADR](docs/adr/2026-08-08-sign-on-update-sql-storage.md).
+- **Fresh by default.** The GET answers `Cache-Control: no-cache` with a version
+  `ETag` and honours `If-None-Match`, so no cache can mask a revocation. A
+  per-list `ttl` opts into `max-age` instead.
 - **Bearer only.** VCALM forbids long-lived credentials of the HTTP Basic kind;
   this service accepts an HS256 JWT access token or a static tenant token, and
   never Basic.
@@ -190,7 +225,8 @@ locally, behind ngrok, and in ECS.
 3. ~~Tenancy, bearer auth, the tenant registry and the authorized-domain check,
    including `SIGNING_MODE=http`.~~ Done; see
    [Tenancy and authentication](#tenancy-and-authentication).
-4. The VCALM status surface routes.
+4. ~~The VCALM status surface routes.~~ Done; see
+   [The VCALM status surface](#the-vcalm-status-surface).
 5. `pnpm provision-tenant` — onboards a tenant end to end.
 6. The allocate endpoint and issuer integration.
 
