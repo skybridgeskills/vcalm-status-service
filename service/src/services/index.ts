@@ -1,7 +1,9 @@
 import { FakeSigningService } from './signing-fake.js'
+import { HttpSigningService } from './signing-http.js'
 import { LocalSigningService } from './signing-local.js'
 import { MemoryStorage } from './storage-memory.js'
 import { SqlStorage } from './storage-sql.js'
+import { EnvTenantRegistry } from './tenants-env.js'
 import { MemoryTenantRegistry } from './tenants-memory.js'
 import { StatusListManager } from '../status-lists/index.js'
 import type { Config } from '../config.js'
@@ -41,8 +43,10 @@ const createSigning = (config: Config): SigningService => {
       return new FakeSigningService()
     case 'local':
       return new LocalSigningService()
+    case 'http':
+      return new HttpSigningService({ url: config.signing.url })
     default:
-      return unreachable(config.signing.mode, 'signing')
+      return unreachable(config.signing, 'signing')
   }
 }
 
@@ -50,6 +54,8 @@ const createTenantRegistry = (config: Config): TenantRegistry => {
   switch (config.tenantRegistry.mode) {
     case 'memory':
       return new MemoryTenantRegistry()
+    case 'env':
+      return new EnvTenantRegistry()
     default:
       return unreachable(config.tenantRegistry.mode, 'tenant registry')
   }
@@ -80,17 +86,20 @@ export const createServices = (config: Config, logger?: Logger): Services => {
 }
 
 export { FakeSigningService } from './signing-fake.js'
+export { HttpSigningService } from './signing-http.js'
 export { LocalSigningService } from './signing-local.js'
 export { MemoryStorage } from './storage-memory.js'
 export { SqlStorage } from './storage-sql.js'
+export { EnvTenantRegistry, parseTenantsFromEnv } from './tenants-env.js'
 export { MemoryTenantRegistry } from './tenants-memory.js'
-export { credentialIssuerId } from './signing.js'
+export { SigningServiceError, credentialIssuerId } from './signing.js'
 export {
   MINIMUM_LIST_LENGTH,
   STATUS_PURPOSES,
   StorageError
 } from './storage.js'
 export { resolveIssuerInstance } from './tenants.js'
+export type { SigningServiceErrorCode } from './signing.js'
 export type { SqlStorageOptions } from './storage-sql.js'
 export type { IssuerInstance } from './issuer-instance.js'
 export type { SigningService } from './signing.js'

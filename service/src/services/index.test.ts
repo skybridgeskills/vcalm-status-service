@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'vitest'
 import { createServices } from './index.js'
 import { FakeSigningService } from './signing-fake.js'
+import { HttpSigningService } from './signing-http.js'
 import { LocalSigningService } from './signing-local.js'
 import { MemoryStorage } from './storage-memory.js'
 import { SqlStorage } from './storage-sql.js'
+import { EnvTenantRegistry } from './tenants-env.js'
 import { MemoryTenantRegistry } from './tenants-memory.js'
 import { parseConfig } from '../config.js'
 import { StatusListManager } from '../status-lists/index.js'
@@ -35,6 +37,23 @@ describe('createServices', () => {
   test('selects the in-process signer by configuration alone', () => {
     const services = createServices(parseConfig({ SIGNING_MODE: 'local' }))
     expect(services.signing).toBeInstanceOf(LocalSigningService)
+  })
+
+  test('selects the remote signer, which needs no key material here', () => {
+    const services = createServices(
+      parseConfig({
+        SIGNING_MODE: 'http',
+        SIGNING_SERVICE_URL: 'http://signing.internal:4006'
+      })
+    )
+    expect(services.signing).toBeInstanceOf(HttpSigningService)
+  })
+
+  test('selects the environment registry', () => {
+    const services = createServices(
+      parseConfig({ TENANT_REGISTRY_MODE: 'env' })
+    )
+    expect(services.tenants).toBeInstanceOf(EnvTenantRegistry)
   })
 
   test('reports the chosen implementations to the logger', () => {
