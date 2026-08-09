@@ -16,9 +16,9 @@ place; signing is real (`@skybridgeskills/vc-signer` signs under
 `did:key` or `did:web`); and status lists are stored, allocated and re-signed on
 update against SQLite or Postgres. Tenancy is real too: tenants come from the
 registry, Bearer authentication resolves them, and a list is only served under a
-domain its tenant holds. The three VCALM status operations are live. What is
-left is the provisioning CLI and the allocate endpoint that serves an issuer —
-see [Roadmap](#roadmap).
+domain its tenant holds. The three VCALM status operations are live, and
+`pnpm provision-tenant` onboards a tenant end to end. What is left is the
+allocate endpoint that serves an issuer — see [Roadmap](#roadmap).
 
 ## The VCALM status surface
 
@@ -146,6 +146,35 @@ Tenants come from `TENANT_REGISTRY_MODE`:
 An `HttpTenantRegistry` that pulls from the platform's tenant-service replaces
 `env` later without touching a caller — which is why the interface is async.
 
+### Provisioning a tenant
+
+The service has no provisioning endpoint and never will — VCALM defines none,
+and provisioning is a write to whatever registry the service reads. Today that
+registry is `.env`, so provisioning is a CLI:
+
+```bash
+pnpm provision-tenant --tenant acme --domains status.acme.test
+```
+
+It mints a Bearer token and key material, derives the issuer DID, appends the
+block to `service/.env` (creating it `0600` if absent), and prints a
+ready-to-run `curl` that creates the tenant's first status list. Restart the
+service afterwards: the registry is read at startup.
+
+Issuer options come as **named, versioned profiles** rather than free-form
+flags — `pnpm provision-tenant --list-profiles`. The default is
+`did-key-eddsa-2022-v1`. `did:web` is not offered yet, because a did:web
+instance is not usable until its document is published and provisioning must
+not half-succeed.
+
+`--emit signing-service` and `--emit transaction-service` additionally print the
+same tenant in those services' own env conventions, for pasting. Nothing is ever
+written outside this repository. Other useful flags: `--print-only`, `--force`,
+`--instance`, `--env`.
+
+Everything the CLI prints is a secret, including the token, which exists
+nowhere else once the terminal scrolls.
+
 ### Authorized domains
 
 The same list is reachable through several fronts, so before serving one the
@@ -174,6 +203,7 @@ the `@interop` credential libraries — see
 ```bash
 pnpm install
 cp .env.example service/.env
+pnpm provision-tenant --tenant acme    # writes a tenant into service/.env
 pnpm dev
 ```
 
@@ -227,7 +257,8 @@ locally, behind ngrok, and in ECS.
    [Tenancy and authentication](#tenancy-and-authentication).
 4. ~~The VCALM status surface routes.~~ Done; see
    [The VCALM status surface](#the-vcalm-status-surface).
-5. `pnpm provision-tenant` — onboards a tenant end to end.
+5. ~~`pnpm provision-tenant` — onboards a tenant end to end.~~ Done; see
+   [Provisioning a tenant](#provisioning-a-tenant).
 6. The allocate endpoint and issuer integration.
 
 ## Acknowledgments
