@@ -9,6 +9,7 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "dev": "dotenvx run -f .env --ignore=MISSING_ENV_FILE -- tsx watch src/server.ts",
+    "provision-tenant": "tsx src/cli/provision-tenant.ts",
     "test": "dotenvx run -f src/test-fixtures/.env.testing -- vitest run",
     "coverage": "dotenvx run -f src/test-fixtures/.env.testing -- vitest run --coverage",
     "lint": "eslint"
