@@ -14,8 +14,14 @@ export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
  * interface; adding one is a new enum member plus a case in the factory.
  */
 export type StorageMode = 'memory' | 'sqlite' | 'postgres'
-export type SigningMode = 'fake' | 'local'
-export type TenantRegistryMode = 'memory'
+export type SigningMode = 'fake' | 'local' | 'http'
+export type TenantRegistryMode = 'memory' | 'env'
+
+/** `http` calls a provisioned `dcc-signing-service`; the others sign in-process. */
+export type SigningConfig =
+  | { mode: 'fake' }
+  | { mode: 'local' }
+  | { mode: 'http'; url: string }
 
 /**
  * Storage carries what its backend needs to connect, so nothing downstream
@@ -39,8 +45,14 @@ export interface Config {
   publicBaseUrl: string
   logLevel: LogLevel
   storage: StorageConfig
-  signing: { mode: SigningMode }
+  signing: SigningConfig
   tenantRegistry: { mode: TenantRegistryMode }
+  /**
+   * HS256 secret for access tokens, matching `dcc-transaction-service`'s
+   * `ACCESS_JWT_SECRET`. Absent means only static tenant tokens authenticate —
+   * it never means authentication is off.
+   */
+  accessJwtSecret?: string
 }
 
 const DEFAULT_PORT = 4008
@@ -68,8 +80,10 @@ const envSchema = z.object({
   STORAGE_MODE: z.enum(['memory', 'sqlite', 'postgres']).default('memory'),
   SQLITE_FILE: z.string().min(1).default(DEFAULT_SQLITE_FILE),
   DATABASE_URL: z.string().min(1).optional(),
-  SIGNING_MODE: z.enum(['fake', 'local']).default('fake'),
-  TENANT_REGISTRY_MODE: z.enum(['memory']).default('memory')
+  SIGNING_MODE: z.enum(['fake', 'local', 'http']).default('fake'),
+  SIGNING_SERVICE_URL: z.string().url().optional(),
+  TENANT_REGISTRY_MODE: z.enum(['memory', 'env']).default('memory'),
+  ACCESS_JWT_SECRET: z.string().min(1).optional()
 })
 
 type EnvValues = z.infer<typeof envSchema>
@@ -89,6 +103,16 @@ const parseStorage = (values: EnvValues): StorageConfig => {
       return { mode: 'postgres', url: values.DATABASE_URL }
     }
   }
+}
+
+const parseSigning = (values: EnvValues): SigningConfig => {
+  if (values.SIGNING_MODE !== 'http') return { mode: values.SIGNING_MODE }
+  if (values.SIGNING_SERVICE_URL === undefined) {
+    throw new ConfigError(
+      'Invalid environment configuration — SIGNING_MODE=http requires SIGNING_SERVICE_URL'
+    )
+  }
+  return { mode: 'http', url: values.SIGNING_SERVICE_URL }
 }
 
 export class ConfigError extends Error {
@@ -125,6 +149,18 @@ export const parseConfig = (env: NodeJS.ProcessEnv): Config => {
     )
   }
 
+  // An empty registry authenticates nobody. That is the safe failure, but in a
+  // deployment it is an outage that looks like a healthy service, so it fails
+  // at boot instead of on every write.
+  if (
+    values.TENANT_REGISTRY_MODE === 'memory' &&
+    values.NODE_ENV === 'production'
+  ) {
+    throw new ConfigError(
+      'Invalid environment configuration — TENANT_REGISTRY_MODE=memory is refused when NODE_ENV=production'
+    )
+  }
+
   return {
     nodeEnv: values.NODE_ENV,
     port: values.PORT,
@@ -133,8 +169,11 @@ export const parseConfig = (env: NodeJS.ProcessEnv): Config => {
     ),
     logLevel: values.LOG_LEVEL,
     storage: parseStorage(values),
-    signing: { mode: values.SIGNING_MODE },
-    tenantRegistry: { mode: values.TENANT_REGISTRY_MODE }
+    signing: parseSigning(values),
+    tenantRegistry: { mode: values.TENANT_REGISTRY_MODE },
+    ...(values.ACCESS_JWT_SECRET === undefined
+      ? {}
+      : { accessJwtSecret: values.ACCESS_JWT_SECRET })
   }
 }
 

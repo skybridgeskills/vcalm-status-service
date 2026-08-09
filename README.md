@@ -14,9 +14,11 @@ Early. The scaffold, configuration, error surface and service interfaces are in
 place; signing is real (`@skybridgeskills/vc-signer` signs under
 `eddsa-rdfc-2022`, `ecdsa-rdfc-2019` and legacy `Ed25519Signature2020`, over
 `did:key` or `did:web`); and status lists are stored, allocated and re-signed on
-update against SQLite or Postgres. The tenant registry is still in-memory, and
-the HTTP surface is not mounted yet — the routes, tenancy and provisioning land
-next, see [Roadmap](#roadmap).
+update against SQLite or Postgres. Tenancy is real too: tenants come from the
+registry, Bearer authentication resolves them, and a list is only served under a
+domain its tenant holds. The three VCALM status operations are live. What is
+left is the provisioning CLI and the allocate endpoint that serves an issuer —
+see [Roadmap](#roadmap).
 
 ## The VCALM status surface
 
@@ -28,8 +30,37 @@ Three operations, per the VCALM OpenAPI description:
 | Fetch a status list credential     | `GET /status-lists/{id}`   | public |
 | Set or clear a credential's status | `POST /credentials/status` | Bearer |
 
-Plus `POST /credentials/status/allocate`, a **documented non-VCALM extension**
-that hands an issuer a status list entry before it signs a credential.
+Planned: `POST /credentials/status/allocate`, a **documented non-VCALM
+extension** that hands an issuer a status list entry before it signs a
+credential.
+
+### Using it
+
+```bash
+# Create a list. The response carries the signed credential and its permanent
+# URL, which is also the Location header.
+curl -X POST localhost:4008/status-lists \
+  -H "Authorization: Bearer $TENANT_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"statusPurpose":"revocation"}'
+```
+
+```bash
+# Revoke index 4242 of that list. `credentialStatus` may instead name only a
+# credentialId and purpose, and the service resolves the entry it allocated.
+curl -X POST localhost:4008/credentials/status \
+  -H "Authorization: Bearer $TENANT_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"credentialId":"urn:uuid:…","status":true,
+       "credentialStatus":{"type":"BitstringStatusList","statusPurpose":"revocation",
+                           "statusListIndex":"4242","statusListCredential":"'"$LIST_URL"'"}}'
+```
+
+```bash
+# Anyone can read it, and the flip is already there.
+curl -i "$LIST_URL"
+```
+
+Requests are validated strictly: an unknown key — including inside `options`
+and `credentialStatus` — is a 400 rather than something silently ignored.
 
 Design commitments worth knowing before reading the code:
 
@@ -45,7 +76,12 @@ Design commitments worth knowing before reading the code:
   credentials point at it forever.
 - **One list per status purpose** (`revocation`, `suspension`), with the BSL
   herd-privacy floor of 131,072 entries enforced at creation.
-- **Random index allocation**, so a list does not leak issuance order.
+- **Random index allocation**, so a list does not leak issuance order. Lists are
+  meant to be rolled at 45–55% fill rather than packed — see
+  [the storage ADR](docs/adr/2026-08-08-sign-on-update-sql-storage.md).
+- **Fresh by default.** The GET answers `Cache-Control: no-cache` with a version
+  `ETag` and honours `If-None-Match`, so no cache can mask a revocation. A
+  per-list `ttl` opts into `max-age` instead.
 - **Bearer only.** VCALM forbids long-lived credentials of the HTTP Basic kind;
   this service accepts an HS256 JWT access token or a static tenant token, and
   never Basic.
@@ -79,6 +115,48 @@ with `select … for update`, SQLite by holding its single writer — decodes th
 bitstring, sets the bit, re-encodes, re-signs and stores both. Concurrent flips
 serialize instead of overwriting each other, and a redundant write returns
 without touching the credential or the version.
+
+## Tenancy and authentication
+
+A tenant owns its lists, its issuer instances and its credentials. Every list
+carries an immutable `tenant_id` set at create, and ownership is checked against
+that — never against the request's host or path, which is what lets one list
+resolve identically through a proxy, a direct domain and an ngrok tunnel.
+
+**Bearer only.** VCALM forbids long-lived credentials of the HTTP Basic kind, so
+this service accepts `Authorization: Bearer <token>` and nothing else — a
+deliberate divergence from `dcc-transaction-service`, whose conventions it
+otherwise copies. Two credential forms are accepted:
+
+1. an **HS256 access token** whose `sub` names the tenant (`ACCESS_JWT_SECRET`);
+2. a **static tenant token**, so one provisioning act works across every service.
+
+The endpoint that mints access tokens is deliberately not implemented — a
+recorded conformance gap. Verification ships, so adding it later is additive.
+Authentication never switches itself off: a registry with no tenants refuses
+every write rather than allowing it.
+
+Tenants come from `TENANT_REGISTRY_MODE`:
+
+| Mode     | Source                                                               |
+| -------- | -------------------------------------------------------------------- |
+| `env`    | `TENANT_TOKEN_<NAME>` and friends — see [.env.example](.env.example) |
+| `memory` | tests only; refused when `NODE_ENV=production`                       |
+
+An `HttpTenantRegistry` that pulls from the platform's tenant-service replaces
+`env` later without touching a caller — which is why the interface is async.
+
+### Authorized domains
+
+The same list is reachable through several fronts, so before serving one the
+service checks the effective host (`X-Forwarded-Host`, else `Host`) against the
+owning tenant's `TENANT_DOMAINS_<NAME>` plus `PUBLIC_BASE_URL`, which every
+tenant may use and nobody has to list. The same set decides whether a
+client-supplied canonical `id` may be minted at create.
+
+This narrows; it never widens. It is not access control — the GET is public
+wherever it is answered — it exists so one tenant's list is never served under
+another's brand.
 
 ## Repository layout
 
@@ -121,10 +199,14 @@ process exits — which would break every credential already pointing at one —
 configuration refuses it when `NODE_ENV=production`.
 
 `SIGNING_MODE=local` signs in-process with `@skybridgeskills/vc-signer`, using
-the key material on the issuer instance a list is bound to.
-`SIGNING_MODE=fake`, the default, is a test double that produces an
-unverifiable proof; configuration refuses it when `NODE_ENV=production`, so a
-production deployment has to choose its signer explicitly.
+the key material on the issuer instance a list is bound to. `SIGNING_MODE=http`
+calls the VCALM `POST /credentials/issue` of a provisioned
+`dcc-signing-service` at `SIGNING_SERVICE_URL`, authenticating with the token
+recorded on the instance — the remote holds the key, so the instance also
+carries the issuer DID that provisioning recorded. `SIGNING_MODE=fake`, the
+default, is a test double that produces an unverifiable proof; configuration
+refuses it when `NODE_ENV=production`, so a production deployment has to choose
+its signer explicitly.
 
 ## Deployment
 
@@ -140,10 +222,11 @@ locally, behind ngrok, and in ECS.
    [packages/vc-signer](packages/vc-signer/README.md).
 2. ~~SQL storage (Kysely; SQLite locally, Postgres deployed) with
    sign-on-update.~~ Done; see [Storage](#storage).
-3. Tenancy, bearer auth, the tenant registry and the authorized-domain check —
-   including `SIGNING_MODE=http`, which calls a provisioned
-   `dcc-signing-service` and needs that tenancy's per-tenant tokens.
-4. The VCALM status surface routes.
+3. ~~Tenancy, bearer auth, the tenant registry and the authorized-domain check,
+   including `SIGNING_MODE=http`.~~ Done; see
+   [Tenancy and authentication](#tenancy-and-authentication).
+4. ~~The VCALM status surface routes.~~ Done; see
+   [The VCALM status surface](#the-vcalm-status-surface).
 5. `pnpm provision-tenant` — onboards a tenant end to end.
 6. The allocate endpoint and issuer integration.
 

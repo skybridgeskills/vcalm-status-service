@@ -62,6 +62,11 @@ export interface StatusChange {
   changed: boolean
   /** The list as it now stands, at its new version when something changed. */
   record: StatusListRecord
+  /**
+   * The index that was addressed. Carried back because the caller that named a
+   * credential rather than an index would otherwise have to look it up again.
+   */
+  statusListIndex: number
 }
 
 /**
@@ -286,7 +291,7 @@ export class StatusListManager {
     const list = await decodeBitstring(current.encodedList)
     if (list.getStatus(statusListIndex) === status) {
       // Idempotent write: no new bytes, so no new signature and no new version.
-      return { result: { changed: false, record: current } }
+      return { result: { changed: false, record: current, statusListIndex } }
     }
     list.setStatus(statusListIndex, status)
 
@@ -307,7 +312,8 @@ export class StatusListManager {
           ...materialization,
           version: current.version + 1,
           updatedAt: this.#now()
-        }
+        },
+        statusListIndex
       }
     }
   }

@@ -24,6 +24,8 @@ export interface IssuerInstance {
   keyMaterial?: KeyMaterial
   /** HTTP signing: the `dcc-signing-service` tenant that holds the key. */
   signingServiceTenant?: string
+  /** HTTP signing: the Bearer token that authenticates as that tenant. */
+  signingServiceToken?: string
   /** Recorded at provisioning for HTTP signing, where the remote owns the key. */
   issuerDid?: string
 }

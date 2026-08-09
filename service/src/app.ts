@@ -2,8 +2,14 @@ import { randomUUID } from 'node:crypto'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { createMiddleware } from 'hono/factory'
+import { createTenantAuth } from './auth.js'
 import { SERVICE_NAME, createHealthCheck } from './health.js'
 import { createErrorHandler, notFoundHandler } from './problem-details.js'
+import { updateCredentialStatusHandler } from './routes/credentials-status.js'
+import {
+  createStatusListHandler,
+  getStatusListHandler
+} from './routes/status-lists.js'
 import type { Config } from './config.js'
 import type { Logger } from './logger.js'
 import type { Services } from './services/index.js'
@@ -14,10 +20,18 @@ export interface AppDeps {
   logger: Logger
 }
 
-/** Every route this service answers, in one place. */
+/**
+ * Every route this service answers, in one place. The status surface mounts
+ * flat: bearer auth already identifies the tenant and a list names its issuer
+ * instance at create, so a VCALM `/instances/{id}/` prefix would add nothing.
+ * That prefix stays reserved for a future issuer adapter.
+ */
 export const routes = {
   index: '/',
-  healthz: '/healthz'
+  healthz: '/healthz',
+  statusLists: '/status-lists',
+  statusList: '/status-lists/:id',
+  credentialsStatus: '/credentials/status'
 } as const
 
 /**
@@ -39,17 +53,35 @@ const requestLogging = (logger: Logger) =>
     })
   })
 
-export const createApp = (deps: AppDeps) =>
-  new Hono()
-    .notFound(notFoundHandler)
-    .onError(createErrorHandler(deps.logger))
+export const createApp = (deps: AppDeps) => {
+  const tenantAuth = createTenantAuth({
+    tenants: deps.services.tenants,
+    config: deps.config
+  })
 
-    .use(requestLogging(deps.logger))
-    .use(cors())
+  return (
+    new Hono()
+      .notFound(notFoundHandler)
+      .onError(createErrorHandler(deps.logger))
 
-    .get(routes.index, (c) =>
-      c.json({ message: `${SERVICE_NAME} status: ok.` })
-    )
-    .get(routes.healthz, createHealthCheck(deps))
+      .use(requestLogging(deps.logger))
+      .use(cors())
+
+      .get(routes.index, (c) =>
+        c.json({ message: `${SERVICE_NAME} status: ok.` })
+      )
+      .get(routes.healthz, createHealthCheck(deps))
+
+      // Writes are tenant-authenticated; the retrieve is public per VCALM, so
+      // the middleware goes on the two operations rather than on a prefix.
+      .post(routes.statusLists, tenantAuth, createStatusListHandler(deps))
+      .get(routes.statusList, getStatusListHandler(deps))
+      .post(
+        routes.credentialsStatus,
+        tenantAuth,
+        updateCredentialStatusHandler(deps)
+      )
+  )
+}
 
 export type AppType = ReturnType<typeof createApp>

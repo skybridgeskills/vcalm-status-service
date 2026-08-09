@@ -26,6 +26,33 @@ export interface SigningService {
   issuerDid(instance: IssuerInstance): Promise<string>
 }
 
+export type SigningServiceErrorCode =
+  /** The remote signer could not be reached, or answered too slowly. */
+  | 'signing-unavailable'
+  /** The remote signer answered, and refused. */
+  | 'signing-rejected'
+  /** The instance is missing something its signing mode needs. */
+  | 'signing-misconfigured'
+
+/**
+ * Failures of the *service around* the signer, as distinct from `SigningError`,
+ * which is about a credential and a key. `vc-signer` makes no network calls, so
+ * "the remote signer is down" has no business being one of its codes.
+ */
+export class SigningServiceError extends Error {
+  override readonly name = 'SigningServiceError'
+  readonly code: SigningServiceErrorCode
+
+  constructor(
+    code: SigningServiceErrorCode,
+    message?: string,
+    options?: { cause?: unknown }
+  ) {
+    super(message ?? code, options)
+    this.code = code
+  }
+}
+
 /**
  * Re-exported from the signing module so routes and services read the issuer
  * the same way the signer validates it.

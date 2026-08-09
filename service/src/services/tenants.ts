@@ -12,6 +12,12 @@ export interface TenantRecord {
   issuerInstances: IssuerInstance[]
   /** Used when a create request names no instance. */
   defaultInstanceId?: string
+  /**
+   * Domains this tenant's lists may be served under, and whose base URLs are
+   * accepted in a client-supplied canonical `id` at create. The service's own
+   * `publicBaseUrl` is authorized for every tenant and is not listed here.
+   */
+  authorizedDomains?: string[]
 }
 
 /**

@@ -53,7 +53,8 @@ describe('parseConfig', () => {
       parseConfig({
         NODE_ENV: 'production',
         SIGNING_MODE: 'local',
-        STORAGE_MODE: 'sqlite'
+        STORAGE_MODE: 'sqlite',
+        TENANT_REGISTRY_MODE: 'env'
       }).signing.mode
     ).toBe('local')
   })
@@ -62,6 +63,35 @@ describe('parseConfig', () => {
     expect(() =>
       parseConfig({ NODE_ENV: 'production', SIGNING_MODE: 'local' })
     ).toThrow(/STORAGE_MODE=memory/)
+  })
+
+  test('refuses a registry that could authenticate nobody in production', () => {
+    expect(() =>
+      parseConfig({
+        NODE_ENV: 'production',
+        SIGNING_MODE: 'local',
+        STORAGE_MODE: 'sqlite'
+      })
+    ).toThrow(/TENANT_REGISTRY_MODE=memory/)
+  })
+
+  test('carries the signing service URL, and refuses http mode without one', () => {
+    expect(
+      parseConfig({
+        SIGNING_MODE: 'http',
+        SIGNING_SERVICE_URL: 'http://signing.internal:4006'
+      }).signing
+    ).toEqual({ mode: 'http', url: 'http://signing.internal:4006' })
+    expect(() => parseConfig({ SIGNING_MODE: 'http' })).toThrow(
+      /SIGNING_SERVICE_URL/
+    )
+  })
+
+  test('leaves the access token secret unset rather than inventing one', () => {
+    expect(parseConfig({}).accessJwtSecret).toBeUndefined()
+    expect(parseConfig({ ACCESS_JWT_SECRET: 's3cret' }).accessJwtSecret).toBe(
+      's3cret'
+    )
   })
 
   test('carries the sqlite file, defaulted for a plain docker run', () => {
