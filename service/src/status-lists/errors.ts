@@ -4,6 +4,8 @@ export type StatusListErrorCode =
   /** Only 1-bit entries in v1; `statusSize`/`statusMessage` are refused. */
   | 'unsupported-characteristics'
   | 'list-not-found'
+  /** A chosen list does not serve the purpose the caller asked for. */
+  | 'list-purpose-mismatch'
   /** The list's tenant or issuer instance is gone from the registry. */
   | 'issuer-instance-unavailable'
   | 'index-out-of-range'

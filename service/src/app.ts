@@ -5,6 +5,7 @@ import { createMiddleware } from 'hono/factory'
 import { createTenantAuth } from './auth.js'
 import { SERVICE_NAME, createHealthCheck } from './health.js'
 import { createErrorHandler, notFoundHandler } from './problem-details.js'
+import { allocateHandler } from './routes/allocate.js'
 import { updateCredentialStatusHandler } from './routes/credentials-status.js'
 import {
   createStatusListHandler,
@@ -31,7 +32,9 @@ export const routes = {
   healthz: '/healthz',
   statusLists: '/status-lists',
   statusList: '/status-lists/:id',
-  credentialsStatus: '/credentials/status'
+  credentialsStatus: '/credentials/status',
+  /** A documented non-VCALM extension; see the route module. */
+  credentialsStatusAllocate: '/credentials/status/allocate'
 } as const
 
 /**
@@ -76,6 +79,7 @@ export const createApp = (deps: AppDeps) => {
       // the middleware goes on the two operations rather than on a prefix.
       .post(routes.statusLists, tenantAuth, createStatusListHandler(deps))
       .get(routes.statusList, getStatusListHandler(deps))
+      .post(routes.credentialsStatusAllocate, tenantAuth, allocateHandler(deps))
       .post(
         routes.credentialsStatus,
         tenantAuth,

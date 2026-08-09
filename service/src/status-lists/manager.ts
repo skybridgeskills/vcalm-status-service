@@ -32,10 +32,12 @@ export interface StatusListManagerDeps {
   signing: SigningService
   tenants: TenantRegistry
   publicBaseUrl: string
-  /** Test seams; both default to the obvious production behavior. */
+  /** Test seams; all default to the obvious production behavior. */
   now?: () => Date
   randomIndex?: (length: number) => number
   generateId?: () => string
+  /** Fraction full at which allocation rolls onto a new list. */
+  rollAtFill?: number
 }
 
 export interface CreateStatusListInput {
@@ -82,6 +84,13 @@ export interface StatusChange {
  */
 const ALLOCATION_ATTEMPTS = 64
 
+/**
+ * Roll onto a new list at half full — the midpoint of the 45–55% band the
+ * storage ADR argues for. Below it, allocation costs two probes; above it the
+ * cost curve steepens for no benefit, and a list is one signature to mint.
+ */
+const ROLL_AT_FILL = 0.5
+
 export class StatusListManager {
   readonly #storage: StorageService
   readonly #signing: SigningService
@@ -90,6 +99,7 @@ export class StatusListManager {
   readonly #now: () => Date
   readonly #randomIndex: (length: number) => number
   readonly #generateId: () => string
+  readonly #rollAtFill: number
 
   constructor(deps: StatusListManagerDeps) {
     this.#storage = deps.storage
@@ -99,6 +109,7 @@ export class StatusListManager {
     this.#now = deps.now ?? (() => new Date())
     this.#randomIndex = deps.randomIndex ?? ((length) => randomInt(length))
     this.#generateId = deps.generateId ?? (() => randomUUID())
+    this.#rollAtFill = deps.rollAtFill ?? ROLL_AT_FILL
   }
 
   /** Creates an all-zero list, signs it, and stores both. */
@@ -225,6 +236,98 @@ export class StatusListManager {
       'list-exhausted',
       `Status list "${input.listId}" has no free index left to allocate`
     )
+  }
+
+  /**
+   * Allocates an entry for a credential without being told which list.
+   *
+   * This is what makes the pre-signing allocate hook work with nothing but a
+   * credential: the tenant's newest list for that purpose is used until it
+   * reaches the roll threshold, and a fresh one is minted when there is none
+   * to use. Two allocators racing here both mint a list, which costs a list and
+   * nothing else — the next call picks the newer one.
+   */
+  async allocateForCredential(input: {
+    tenantId: string
+    credentialId: string
+    statusPurpose: StatusPurpose
+    /** Skips selection entirely; the caller has chosen. */
+    listId?: string
+  }): Promise<{ allocation: IndexAllocation; list: StatusListRecord }> {
+    const list =
+      input.listId === undefined
+        ? await this.#listForPurpose(input.tenantId, input.statusPurpose)
+        : await this.#chosenList(
+            input.tenantId,
+            input.listId,
+            input.statusPurpose
+          )
+
+    const allocation = await this.allocateIndex({
+      tenantId: input.tenantId,
+      credentialId: input.credentialId,
+      statusPurpose: input.statusPurpose,
+      listId: list.id
+    })
+    return { allocation, list }
+  }
+
+  async #chosenList(
+    tenantId: string,
+    listId: string,
+    statusPurpose: StatusPurpose
+  ): Promise<StatusListRecord> {
+    const list = await this.#storage.getStatusList(listId)
+    if (list === undefined || list.tenantId !== tenantId) {
+      throw new StatusListError(
+        'list-not-found',
+        `Status list "${listId}" not found`
+      )
+    }
+    if (list.statusPurpose !== statusPurpose) {
+      throw new StatusListError(
+        'list-purpose-mismatch',
+        `Status list "${listId}" is a ${list.statusPurpose} list, not ${statusPurpose}`
+      )
+    }
+    return list
+  }
+
+  /** The newest list still under the roll threshold, or a new one. */
+  async #listForPurpose(
+    tenantId: string,
+    statusPurpose: StatusPurpose
+  ): Promise<StatusListRecord> {
+    const lists = await this.#storage.findStatusLists({
+      tenantId,
+      statusPurpose
+    })
+
+    for (const candidate of [...lists].reverse()) {
+      const used = await this.#storage.countAllocations(candidate.id)
+      if (used < candidate.characteristics.length * this.#rollAtFill) {
+        return candidate
+      }
+    }
+
+    return await this.createList({
+      tenantId,
+      instance: await this.#defaultInstanceFor(tenantId),
+      statusPurpose
+    })
+  }
+
+  async #defaultInstanceFor(tenantId: string): Promise<IssuerInstance> {
+    const tenant = await this.#tenants.getTenant(tenantId)
+    const instance =
+      tenant === undefined ? undefined : resolveIssuerInstance(tenant)
+    if (instance === undefined) {
+      throw new StatusListError(
+        'issuer-instance-unavailable',
+        `Tenant "${tenantId}" has no default issuer instance, so no status list can be created for it`
+      )
+    }
+    return instance
   }
 
   #characteristics(
